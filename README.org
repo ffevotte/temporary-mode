@@ -1,0 +1,79 @@
+#+TITLE: temporary-mode.el
+#+OPTIONS: toc:nil
+
+=temporary-mode.el= allows defining temporary key bindings to easily chain
+related commands.
+
+* Example
+
+#+BEGIN_SRC emacs-lisp
+  (define-temporary-mode git-gutter-nav-mode
+    (("g" . 'git-gutter:toggle)
+     ("n" . 'git-gutter:next-hunk)
+     ("p" . 'git-gutter:previous-hunk))
+    "Navigate between git hunks in the buffer"
+    :lighter " GitNav")
+
+  (git-gutter-nav-mode/setup "C-c g")
+#+END_SRC
+
+The first command in the above snippet defines a new minor mode named
+=git-gutter-nav-mode=. When this minor mode is active, pressing =g=, =n= or =p=
+executes the corresponding =git-gutter= commands. Any other key deactivates the
+mode and performs its usual action.
+
+Since =git-gutter= commands are not bound by default in the global map,
+=git-gutter-nav-mode/setup= allows to easily bind all commands known to
+=git-gutter-nav-mode= to the corresponding keys under the given =C-c g= prefix.
+
+After this setup, pressing =C-c g g n p a= will run in turn the following
+commands:
+
+1. =git-gutter:toggle= (and activate =git-gutter-nav-mode=)
+2. =git-gutter:next=
+3. =git-gutter:prev=
+4. insert "a" (and deactivate =git-gutter-nav-mode=)
+
+
+* API documentation
+
+#+BEGIN_SRC emacs-lisp
+  (define-temporary-mode MODE BINDINGS DOC &rest ARGS)
+#+END_SRC
+
+Define a new minor mode named =MODE=, whose keymap is created after
+=BINDINGS=. While this mode is active, any command not mentioned in the keymap
+will deactivate the mode.
+
+- =MODE=: name of the minor mode.
+- =BINDINGS=: list of bindings of the form =(KEY . COMMAND)=, where:
+  - =KEY= is a key in a format suitable for =kbd=,
+  - =COMMAND= is a quoted command.
+- =DOC=: docstring of the minor mode.
+- =ARGS=: optional additional arguments passed to =define-minor-mode=.
+
+This command also defines a number of functions whose name derive from that of
+the minor mode and are listed hereafter.
+
+
+** =MODE/setup=
+
+#+BEGIN_SRC emacs-lisp
+  (MODE/setup PREFIX &optional KEYMAP)
+#+END_SRC
+
+Install key bindings in =KEYMAP= so that all commands known to =MODE= are
+accessible under the given =PREFIX=.
+
+- =PREFIX=: key sequence, in a format suitable for =kbd=.
+- =KEYMAP=: keymap in which to install bindings. Defaults to =global-map=.
+
+
+** =MODE/update=
+
+#+BEGIN_SRC emacs-lisp
+  (MODE/update)
+#+END_SRC
+
+This function should be called each time =MODE-map= is modified, in order to update the
+list of commands handled by the temporary minor mode.
