@@ -4,41 +4,128 @@
 =temporary-mode.el= allows defining temporary key bindings to easily chain
 related commands.
 
-* Example
+* Examples
+
+** Create new bindings
 
 #+BEGIN_SRC emacs-lisp
-  (define-temporary-mode git-gutter-nav-mode
-    (("g" . 'git-gutter:toggle)
-     ("n" . 'git-gutter:next-hunk)
-     ("p" . 'git-gutter:previous-hunk))
-    "Navigate between git hunks in the buffer"
-    :lighter " GitNav")
-
-  (git-gutter-nav-mode/setup "C-c g")
+  (define-temporary-mode git-nav-mode
+    "Navigate between git hunks in the buffer."
+    :lighter  " GitNav"
+    :install  "C-c g"
+    :bindings (("n" . git-gutter:next-hunk)
+               ("p" . git-gutter:previous-hunk))
+    :body (when git-nav-mode
+            (git-gutter-mode 1)))
 #+END_SRC
 
-The first command in the above snippet defines a new minor mode named
-=git-gutter-nav-mode=. When this minor mode is active, pressing =g=, =n= or =p=
-executes the corresponding =git-gutter= commands. Any other key deactivates the
+Snippet above defines a new minor mode named =git-nav-mode=. When this minor
+mode is active, pressing =g=, =n= or =p= executes the corresponding =git-gutter=
+commands (as described by the =:bindings= block). Any other key deactivates the
 mode and performs its usual action.
 
-Since =git-gutter= commands are not bound by default in the global map,
-=git-gutter-nav-mode/setup= allows to easily bind all commands known to
-=git-gutter-nav-mode= to the corresponding keys under the given =C-c g= prefix.
+=git-gutter= commands are not bound by default in the global map, so that we
+want to create new global bindings to run =git-gutter= commands and activate
+=git-nav-mode= to chain them. This is done /via/ the =:install= keyword, which
+creates new bindings for the commands under the given =C-c g= prefix in the
+global map.
 
-After this setup, pressing =C-c g g n p a= will run in turn the following
+We also want to ensure that =git-gutter-mode= is always active when
+=git-nav-mode= is enabled. This can be done by providing an elisp form to be
+added in the body of =git-nav-mode=.
+
+After this setup, pressing =C-c g n p a p= will run in turn the following
 commands:
 
-1. =git-gutter:toggle= (and activate =git-gutter-nav-mode=)
-2. =git-gutter:next=
-3. =git-gutter:prev=
-4. insert "a" (and deactivate =git-gutter-nav-mode=)
+- =C-c g n= :: activate =git-nav-mode= (which in turn activates
+               =git-gutter-mode=) and execute =git-gutter:next=
+
+
+- =p= (equivalent to =C-c g p=) :: execute =git-gutter:previous=
+
+
+- =a= :: deactivate =git-nav-mode= and insert "a"
+
+
+- =p= :: insert "p"
+
+
+** Rebind existing bindings
+
+#+BEGIN_SRC emacs-lisp
+  (define-temporary-mode gud-nav-mode
+    "Interact with gud"
+    :install  "C-x C-a"
+    :bindings "C-x C-a")
+#+END_SRC
+
+Instead of defining new bindings, one can read an already existing keymap. In
+the example above, the local =gud-nav-mode= keymap will define all bindings
+available under the =C-x C-a= prefix in the global map.
+
+Wrapper commands, which activate =gud-nav-mode= before running their original
+action, are then rebound in the global map in place of the regular =gud=
+commands.
+
+With this setup, the =C-x C-a C-s= key sequence will then yield:
+
+- =C-x C-a C-s= :: activate =gud-nav-mode= and execute =gud-step=
+
+
+- =C-n= (equivalent to =C-x C-a C-n=) :: execute =gud-next=
+
+
+- =a= :: deactivate =gud-nav-mode= and insert "a"
+
+
+When the =:install= and =:bindings= keywords get the same argument, the =:rebind=
+shortcut can be used to replace them both. The snippet above is thus equivalent
+to:
+
+#+BEGIN_SRC emacs-lisp
+  (define-temporary-mode gud-nav-mode
+    "Interact with gud"
+    :rebind  "C-x C-a")
+#+END_SRC
+
+
+** Single entry point
+
+It is not always desirable that all bindings available in the temporary mode be
+available from the global map as well. In such cases, it is possible to restrict
+the bindings installed in the global map using the =:entry-points= keyword:
+
+#+BEGIN_SRC emacs-lisp
+  (define-temporary-mode error-mode
+    "Navigate between errors"
+    :lighter " Error"
+    :install      "C-x"
+    :bindings     (("`" . next-error)
+                   ("n" . next-error)
+                   ("p" . previous-error))
+    :entry-points ("`"))
+#+END_SRC
+
+In the example above, only =C-x `= is globally rebound; =C-x n= and =C-x p= are left
+untouched in the global map. But =n= and =p= are still bound in the temporary
+mode map to easily chain them.
+
+With this setup, the =C-x ` n p x= sequence yields:
+
+- =C-x `= :: activate =error-mode= and execute =next-error=. This is the only
+             way to enter =error-mode= (apart from using =M-x=).
+
+- =n=     :: execute =next-error=
+
+- =p=     :: execute =previous-error=
+
+- =x=     :: deactivate =error-mode= and insert "x"
 
 
 * API documentation
 
 #+BEGIN_SRC emacs-lisp
-  (define-temporary-mode MODE BINDINGS DOC &rest ARGS)
+  (define-temporary-mode MODE DOC &rest ARGS)
 #+END_SRC
 
 Define a new minor mode named =MODE=, whose keymap is created after
@@ -46,34 +133,82 @@ Define a new minor mode named =MODE=, whose keymap is created after
 will deactivate the mode.
 
 - =MODE=: name of the minor mode.
-- =BINDINGS=: list of bindings of the form =(KEY . COMMAND)=, where:
-  - =KEY= is a key in a format suitable for =kbd=,
-  - =COMMAND= is a quoted command.
 - =DOC=: docstring of the minor mode.
-- =ARGS=: optional additional arguments passed to =define-minor-mode=.
-
-This command also defines a number of functions whose name derive from that of
-the minor mode and are listed hereafter.
+- =ARGS=: property list with additional arguments, as described hereafter.
 
 
-** =MODE/setup=
+** Terminology
 
-#+BEGIN_SRC emacs-lisp
-  (MODE/setup PREFIX &optional KEYMAP)
-#+END_SRC
+The following conventions are used below:
 
-Install key bindings in =KEYMAP= so that all commands known to =MODE= are
-accessible under the given =PREFIX=.
-
-- =PREFIX=: key sequence, in a format suitable for =kbd=.
-- =KEYMAP=: keymap in which to install bindings. Defaults to =global-map=.
+- global map :: any keymap which is active when the temporary minor mode is
+                disabled. Usually =global-map= for read-only operations, and
+                =temporary-mode-map= for modifications. See the documentation
+                for the =:install= keyword below.
 
 
-** =MODE/update=
+- modal map :: the keymap which will be active while in the temporary mode. Any
+               key sequence not handled by the modal map will cause the
+               temporary mode to be deactivated.
 
-#+BEGIN_SRC emacs-lisp
-  (MODE/update)
-#+END_SRC
 
-This function should be called each time =MODE-map= is modified, in order to update the
-list of commands handled by the temporary minor mode.
+- =KEY= (respectively =PREFIX=) :: a string describing a key chord (respectively
+     a prefix sequence), in a format suitable for =kbd=.
+
+
+- =KEYMAP= :: an unquoted symbol whose value is a global keymap.
+
+
+- =COMMAND= :: an unquoted command symbol.
+
+
+** Keywords
+
+We list below all additional keywords supported by =define-temporary-mode=, and
+the possible formats for their arguments:
+
+- =:bindings= ::
+  - list of =(KEY . COMMAND)= cells :: 
+       the modal keymap defines all listed bindings.
+
+  - =PREFIX= ::
+  - =(PREFIX . KEYMAP)= ::
+       the modal keymap will be determined by looking up =PREFIX= in =KEYMAP=
+       (defaults to =global-map=).
+
+
+- =:install= ::
+  - =PREFIX= ::
+  - =(PREFIX . KEYMAP)= ::
+       install all modal bindings under =PREFIX= in a global =KEYMAP=. The
+       commands are modified so that they activate the minor mode when
+       called.
+
+       =KEYMAP= defaults to =temporary-mode-map=, which is used only for
+       =define-temporary-mode= to install such bindings and has precedence over
+       =global-map=. This ensures that all bindings can easily be disabled by
+       deactivating =temporary-mode=. Also evaluating a =define-temporary-mode :rebind=
+       stanza multiple times will less likely cause problems, since =global-map=
+       will be treated read-only, and =temporary-mode-map= will be the only one
+       to be modified.
+
+
+- =:rebind= ::
+  - =PREFIX= ::
+  - =(PREFIX . KEYMAP)= ::
+       shorthand specifying the same value for both =:bindings= and
+       =:install=. This allows easily setting up a temporary mode for all
+       commands under the given prefix.
+
+
+- =:entry-points (list KEY-OR-COMMAND)= :: limit the bindings installed in the
+     global keymap (via the =:install= keyword) to those listed. Each element
+     =KEY-OR-COMMAND= can be either a string describing a key chord, or a
+     command symbol. In the latter case, all modal bindings to that command will
+     be installed in the global map.
+
+
+- =:lighter LIGHTER= :: specify a lighter for the minor mode.
+
+
+- =:body FORM= :: specify a form to be added to the minor-mode body.
